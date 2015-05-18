@@ -1,0 +1,10 @@
+***************************************************************************************
+***************************************************************************************
+*******************************Projet MACHINE LEARNING*********************************
+***************************************************************************************
+***************************************************************************************
+
+
+Sujet:
+“Learning from the crowd”Dans un certain nombre de probl`emes, on ne dispose pas vraiment de v ́erit ́e terrain et les  ́etiquettes des donn ́ees peuvent donc ˆetre bruit ́ees ou fausses. Par exemple, pour la d ́etection de tumeurs `a partir d’images radiologiques, les meilleurs experts font eux-mˆemes des pr ́edictions qui peuvent ˆetre divergentes. Lorsqu’on dispose de plusieurs experts et donc de plusieurs  ́etiquetages bruit ́es on peut esp ́erer apprendre `a faire la tˆache mieux que les experts en apprenant simultan ́ement lesquels on tendance `a avoir un avis divergent par rapport `a l’opinion g ́en ́erale. On est  ́evidement confront ́e `a ce type probl`eme lorsqu’on utilise du crowdsourcing, car l’erreur est humaine...
+
