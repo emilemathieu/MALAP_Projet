@@ -56,27 +56,23 @@ for i in range(Y.shape[0]):
             Y[i,j] = (r>beta[j])
 
 
-        
-        
-
-
 def p(w,x):#x a nbOfExperts colonnes et 34 lignes
     z = np.inner(X,w)
     p = np.ones(z.shape[0])
     for i in range(z.shape[0]):
         p[i] = 1/(1+exp(-z[i]))
-    print " taille p : ",p.shape
     return p
 
 def a(alpha,Y):
-    result = np.array([Y.shape[0],1])
+    result = np.ones(Y.shape[0])
     for i in range(Y.shape[0]):
         y = Y[i,:]
         t_1 = alpha**y
         t_2 = (1-alpha)**(1-y)
         prod = t_1*t_2
         res = reduce(operator.mul,prod)
-        result[i,0]=res
+        res = reduce(operator.mul,res)
+        result[i]=res
     return result
 
 def b(beta,Y):
@@ -84,7 +80,7 @@ def b(beta,Y):
 
     
 def gradp(x,mu,w):
-    return np.inner(tools.to_line(mu-p(w,x)),x.transpose())
+    return tools.to_col(np.inner(tools.to_line(mu-p(w,x)),x.transpose()))
 
 def hessianp(x,w):
     result=0
@@ -104,16 +100,37 @@ alphanew = np.inner(tools.to_line(mu),Y.transpose())/sum(mu)
 betanew = np.inner(tools.to_line(1-mu),1-Y.transpose())/sum(1-mu)
 
 
-grad = gradp(X,mu,w)
-hess=hessianp(X,w)
+
+def f(w,X,alpha,Y,beta,mu):
+    aa=tools.to_line(a(alpha,Y))
+    bb=tools.to_line(b(beta,Y))
+    pp=tools.to_line(p(w,X))
+    muu=tools.to_line(mu)
+    ln = np.zeros((1,aa.shape[1]))
+    prod = aa*pp
+    for i in range(aa.shape[1]):
+        ln[0,i] = log(prod[0,i])
+    ln_2 = np.zeros((1,aa.shape[1]))
+    for i in range(aa.shape[1]):
+        ln_2[0,i] = log(1-pp[0,i])
+    fopt = muu*ln+(1-mu)*ln_2*bb
+    fopt = reduce(operator.mul,fopt)
+    fopt = sum(fopt)
+    return fopt
+
+
 def fopt(w):
-    return p(w,X)
+    return f(w,X,alphanew,Y,betanew,mu)
+
 def gradopt(w):
     return gradp(X,mu,w)
-def hessopt(w):
-    return hessianp(x,w)
-#optimize.newton(func=fopt,x0=w,fprime=gradopt,fprime2=hessopt)
 
+def hessopt(w):
+    return hessianp(X,w)
+
+#optimize.newton(func=fopt,x0=w,fprime=gradopt)#,fprime2=hessopt)
+print "taille de w : ",w.shape
+optimize.minimize(fun=fopt,x0=w,method='Newton-CG',jac=gradopt,hess=hessopt)
 ###Finir l'algorithme EM
 ##for k in range(1000):
 ##    ###E-step
