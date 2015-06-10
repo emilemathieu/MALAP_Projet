@@ -35,6 +35,7 @@ X,Z = load_ionosphere("ionosphere.txt")
 ###CLUSTERING DATA WITH KMEANS
 kmeans = KMeans(nbOfExperts)
 clusters = kmeans.fit_predict(X)
+print kmeans.inertia_
 
 ###CREATING EXPERTS LABELS
 Y=np.zeros([X.shape[0],nbOfExperts])
@@ -103,9 +104,10 @@ while (np.inner(alpha-alphaNew,alpha-alphaNew)+(beta-betaNew)**2>espilon and ite
         #P0 = ((1-eta(t,i))**abs(Y[i,t]-0))*(eta(t,i)**(1-abs(Y[i,t]-0)))
         #P1 = ((1-eta(t,i))**abs(Y[i,t]-1))*(eta(t,i)**(1-abs(Y[i,t]-1)))
         P2 = expit(-np.inner(alpha,X[i,:])-beta)
-        p[i,1]=np.prod([((1-eta(weight,gamma,t,i))**abs(Y[i,t]-1))*(eta(weight,gamma,t,i)**(1-abs(Y[i,t]-1)))*P2 for t in range(nbOfExperts)])
-        p[i,0]=np.prod([((1-eta(weight,gamma,t,i))**abs(Y[i,t]-0))*(eta(weight,gamma,t,i)**(1-abs(Y[i,t]-0)))*(1-P2) for t in range(nbOfExperts)])
-        #p[i,0]=1-p[i,1]
+        p[i,1]=np.prod([((1-eta(weight,gamma,t,i))**abs(Y[i,t]-1))*(eta(weight,gamma,t,i)**(1-abs(Y[i,t]-1))) for t in range(nbOfExperts)])
+        p[i,1] = p[i,1]*P2
+        p[i,0]=np.prod([((1-eta(weight,gamma,t,i))**abs(Y[i,t]-0))*(eta(weight,gamma,t,i)**(1-abs(Y[i,t]-0))) for t in range(nbOfExperts)])
+        p[i,0] = p[i,0]*(1-P2)
         r = p[i,1]+p[i,0]
         p[i,1]=p[i,1]/r
         p[i,0]=p[i,0]/r
