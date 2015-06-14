@@ -33,29 +33,29 @@ def fopt(x):
     g = x[alpha.shape[0]+1:alpha.shape[0]+1+gamma.shape[0]]
     w = np.reshape(x[alpha.shape[0]+1+gamma.shape[0]:alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape)],(weight.shape[0],weight.shape[1]))
     res = 0
-    for i in range(X.shape[0]):
-        k = sum([p[i,1]*((1-Y[i,t])*np.log(1-eta(w,g,t,i))+Y[i,t]*np.log(eta(w,g,t,i)))+p[i,0]*(Y[i,t]*np.log(1-eta(w,g,t,i))+(1-Y[i,t])*np.log(eta(w,g,t,i))) for t in range(nbOfExperts)])
-        l = p[i,1]*np.log(expit(np.inner(a,X[i,:])+b)) + p[i,0]*np.log(1-expit(np.inner(a,X[i,:])+b))
-        res = res + k + l
+    for i,Xi in enumerate(X):
+        k = sum([p[i,1]*((1-Y[i,t])*np.log(1-expit(np.inner(Xi,w[:,t])+g[t]))+Y[i,t]*np.log(expit(np.inner(Xi,w[:,t])+g[t])))+p[i,0]*(Y[i,t]*np.log(1-expit(np.inner(Xi,w[:,t])+g[t]))+(1-Y[i,t])*np.log(expit(np.inner(Xi,w[:,t])+g[t]))) for t in range(nbOfExperts)])
+        l = nbOfExperts*(p[i,1]*np.log(expit(np.inner(a,Xi)+b)) + p[i,0]*np.log(1-expit(np.inner(a,Xi)+b)))
+        res += k + l
     return -res
     
 ### Gradient of to be optimized function    
-def gradfopt_Personal(x):
+def gradfopt_EM(x):
     a = x[0:alpha.shape[0]]
     b = x[alpha.shape[0]:alpha.shape[0]+1][0]
     g = x[alpha.shape[0]+1:alpha.shape[0]+1+gamma.shape[0]]
     w = np.reshape(x[alpha.shape[0]+1+gamma.shape[0]:alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape)],(weight.shape[0],weight.shape[1]))
     
-    gradalpha = np.zeros(alpha.shape[0])  
+    gradalpha = np.zeros_like(alpha)
     gradbeta = 0
-    gradgamma = 0
+    gradgamma = np.zeros_like(gamma)  
     gradweight = np.zeros(np.prod(weight.shape))  
     
     for i,Xi in enumerate(X):
-        gradalpha = gradalpha + (p[i,1]-expit(np.inner(a,x)+b))*Xi
-        gradbeta = gradbeta + p[i,1]-expit(np.inner(a,Xi)+b)
-        gradgamma = gradgamma + p[i,1]*(-eta(w,g,t,i)+Y[i,t]) + p[i,0]*(1-eta(w,g,t,i)-Y[i,t])
-        gradweight = gradweight + (p[i,1]*(-eta(w,g,t,i)+Y[i,t]) + p[i,0]*(1-eta(w,g,t,i)-Y[i,t]))*Xi
+        gradalpha += nbOfExperts*(p[i,1]-expit(np.inner(a,Xi)+b))*Xi
+        gradbeta +=  nbOfExperts*(p[i,1]-expit(np.inner(a,Xi)+b))
+        gradgamma +=  [(1-expit(np.inner(w[:,t],Xi)+g[t]))+Y[i,t]*(p[i,1]-p[i,0])-p[i,1] for t in range(nbOfExperts)]
+        gradweight +=  np.reshape(np.array([((1-expit(np.inner(w[:,t],Xi)+g[t]))+Y[i,t]*(p[i,1]-p[i,0])-p[i,1])*Xi for t in range(nbOfExperts)]),np.prod(weight.shape))
     return -np.hstack((gradalpha,gradbeta,gradgamma,gradweight))
     
 def gradfopt(x):
@@ -110,8 +110,7 @@ for i,cluster in enumerate(clusters):
 ### Initialization            
 alpha = np.ones(X.shape[1])
 beta = 1
-epsilon = 1e-8
-p = np.zeros([Z.shape[0],2])
+epsilon = 1e-20
 
 alphaNew = np.zeros(X.shape[1])
 betaNew = 0
@@ -120,12 +119,15 @@ gamma = np.zeros(nbOfExperts)
     
 ####EM-Algorithm
 iter = 0
-while (np.inner(alpha-alphaNew,alpha-alphaNew)/alpha.shape[0]+(beta-betaNew)**2>epsilon):
+theta_old=0.01*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
+theta_new=1*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
+#while (np.inner(alpha-alphaNew,alpha-alphaNew)+(beta-betaNew)**2>epsilon):
+while((fopt(theta_old)-fopt(theta_new))**2>epsilon and np.inner(alpha-alphaNew,alpha-alphaNew)+(beta-betaNew)**2>epsilon):
     print "iteration:",iter
     print "convergence criterion:", np.inner(alpha-alphaNew,alpha-alphaNew)+(beta-betaNew)**2
     
     if iter==0:
-        theta_old=0.1*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
+        theta_old=0.01*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
     else:
         theta_old=theta_new
         
@@ -136,25 +138,33 @@ while (np.inner(alpha-alphaNew,alpha-alphaNew)/alpha.shape[0]+(beta-betaNew)**2>
     beta = theta_old[alpha.shape[0]:alpha.shape[0]+1][0]
     gamma = theta_old[alpha.shape[0]+1:alpha.shape[0]+1+gamma.shape[0]]
     weight = np.reshape(theta_old[alpha.shape[0]+1+gamma.shape[0]:alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape)],(weight.shape[0],weight.shape[1]))
-    print "E-STEP"
-    for i,x in enumerate(X):
-        P2 = expit(-np.inner(alpha,X[i,:])-beta)
-        p[i,1]=np.prod([((1-eta(weight,gamma,t,i))**abs(Y[i,t]-1))*(eta(weight,gamma,t,i)**(1-abs(Y[i,t]-1))) for t in range(nbOfExperts)])
-        p[i,1] = p[i,1]*P2
-        p[i,0]=np.prod([((1-eta(weight,gamma,t,i))**abs(Y[i,t]-0))*(eta(weight,gamma,t,i)**(1-abs(Y[i,t]-0))) for t in range(nbOfExperts)])
-        p[i,0] = p[i,0]*(1-P2)
-        r = p[i,1]+p[i,0]
-        p[i,1]=p[i,1]/r
-        p[i,0]=p[i,0]/r
+    #print "E-STEP"
+    if iter==0:
+        for i,Yi in enumerate(Y):
+            p[i,1]=np.mean(Yi)
+        p[:,0]=1-p[:,1]
+    else:
+        for i,Xi in enumerate(X):
+            P2 = expit(np.inner(alpha,Xi)+beta)
+            p[i,1]=np.prod([((1-expit(np.inner(Xi,weight[:,t])+gamma[t]))**abs(Y[i,t]-1))*(expit(np.inner(Xi,weight[:,t])+gamma[t])**(1-abs(Y[i,t]-1))) for t in range(nbOfExperts)])
+            p[i,1] = p[i,1]*P2
+            p[i,0]=np.prod([((1-expit(np.inner(Xi,weight[:,t])+gamma[t]))**abs(Y[i,t]-0))*(expit(np.inner(Xi,weight[:,t])+gamma[t])**(1-abs(Y[i,t]-0))) for t in range(nbOfExperts)])
+            p[i,0] = p[i,0]*(1-P2)
+            r = p[i,1]+p[i,0]
+            p[i,1]=p[i,1]/r
+            p[i,0]=p[i,0]/r
     
     ###M-STEP
-    print "M-STEP"
+    #print "M-STEP"
     #res = minimize(fopt, theta_old, method='L-BFGS-B', options={'disp': True})
-    res = minimize(fopt, theta_old, method='L-BFGS-B', options={'disp': True, 'gtol':1})
+    #res = minimize(fopt, theta_old, method='L-BFGS-B', options={'disp': True, 'gtol':1})
     #res = minimize(fopt, theta_old, options={'disp': True, 'maxiter': 5})
     #res = minimize(fopt, theta_old, method='BFGS', options={'disp': True, 'maxiter': 10})
     
-    #res = minimize(fopt, theta_old, method='L-BFGS-B',jac=gradfopt, options={'disp': True})
+    #res = minimize(fopt, theta_old,jac=gradfopt_EM, options={'disp': True})
+    #res = minimize(fopt, theta_old, method='L-BFGS-B',jac=gradfopt_EM, options={'disp': True})
+    #res = minimize(fopt, theta_old,jac=gradfopt_EM , options={'disp': True})
+    res = minimize(fopt, theta_old, method='BFGS',jac=gradfopt_EM) 
     
     theta_new = res.x
     alphaNew = theta_new[0:alpha.shape[0]]
@@ -172,26 +182,9 @@ weight = np.reshape(theta_new[alpha.shape[0]+1+gamma.shape[0]:alpha.shape[0]+1+g
 
 ################ Classification ################# 
 
-
-### ROC for EM-algorithm
-
-fpr, tpr, thresholds = roc_curve(Z, expit(np.sum(np.multiply(X,np.tile(alpha,(X.shape[0],1))),1)+beta))
-fpr, tpr, thresholds = roc_curve(Z, p[:,1])
-
-roc_auc = auc(fpr, tpr)
-
-plt.plot(fpr, tpr, 'k--',label='Bernouilli ROC (area = %0.2f)' % roc_auc, lw=2)
-plt.xlim([-0.05,1.05])
-plt.ylim([-0.05,1.05])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('Receiver operating characteristic example')
-plt.legend(loc="lower right")
-plt.show()
-    
 ### Classification for Logistic regression on majority voting & concatenating
 
-def LogisticRegressionROC(Data,Label,legend):
+def LogisticRegressionROC(Data,Label,TrueLabel, Color,legend, marker):
     Majority_Logistic = LogisticRegression()
     Majority_Logistic.verbose=0
     N_folds=5
@@ -203,18 +196,17 @@ def LogisticRegressionROC(Data,Label,legend):
     for i, (train, test) in enumerate(kf):
         probas_ = Majority_Logistic.fit(Data[train], Label[train]).predict_proba(Data[test])
         # Compute ROC curve and area the curve
-        fpr, tpr, thresholds = roc_curve(Label[test], probas_[:, 1])
+        fpr, tpr, thresholds = roc_curve(TrueLabel[test], probas_[:, 1])
         mean_tpr += interp(mean_fpr, fpr, tpr)
         mean_tpr[0] = 0.0
         #roc_auc = auc(fpr, tpr)
         #plt.plot(fpr, tpr, lw=1, label='ROC fold %d (area = %0.2f)' % (i, roc_auc))
-
-    #plt.plot([0, 1], [0, 1], '--', color=(0.6, 0.6, 0.6), label='Luck')
     
     mean_tpr /= len(kf)
     mean_tpr[-1] = 1.0
     mean_auc = auc(mean_fpr, mean_tpr)
-    plt.plot(mean_fpr, mean_tpr, 'k--',color=(np.random.random_sample(), np.random.random_sample(), np.random.random_sample()),label='%s ROC (AUC: %0.2f)' % (legend,mean_auc), lw=2)
+    
+    plt.plot(mean_fpr, mean_tpr, marker ,color=Color,label='%s AUC:%0.2f' % (legend,mean_auc), lw=2)
     
     plt.xlim([-0.05,1.05])
     plt.ylim([-0.05,1.05])
@@ -230,17 +222,40 @@ for i,y in enumerate(Y):
     Y_maj[i]=Counter(y).most_common()[0][0]
 
 # concatenate labels
-X_concatenate=np.repeat(X,5,axis=0)
-Y_concatenate=np.reshape(Y,np.prod(Y.shape))
+#X_concatenate=np.repeat(X,5,axis=0)
+#Y_concatenate=np.reshape(Y,np.prod(Y.shape))
 
-LogisticRegressionROC(X_concatenate,Y_concatenate,"L.R. Concatenation")
+### ROC for EM-algorithm
+fpr, tpr, thresholds = roc_curve(Z, expit(np.sum(np.multiply(X,np.tile(alpha,(X.shape[0],1))),1)+beta))
+plt.plot(fpr, tpr, '-.',color=(1,0,1), label='Bernouilli AUC:%0.2f' % auc(fpr, tpr), lw=2)
 
-LogisticRegressionROC(X,Y_maj,"L.R. Majority")
+plt.plot([0, 1], [0, 1], '--', color=(0.6, 0.6, 0.6))
 
-LogisticRegressionROC(X,Y[:,0],"L.R.-Annotator1")
-LogisticRegressionROC(X,Y[:,1],"L.R.-Annotator2")
-LogisticRegressionROC(X,Y[:,2],"L.R.-Annotator3")
-LogisticRegressionROC(X,Y[:,3],"L.R.-Annotator4")
-LogisticRegressionROC(X,Y[:,4],"L.R.-Annotator5")
-plt.plot([0, 1], [0, 1], '--', color=(0.6, 0.6, 0.6), label='Luck')
+LogisticRegressionROC(np.repeat(X,5,axis=0),np.reshape(Y,np.prod(Y.shape)),np.repeat(Z,5,axis=0),(0,0,1),"L.R. Concatenation",'-.')
+
+LogisticRegressionROC(X,Y_maj,Z,(0,0,0),"L.R. Majority",'-')
+
+LogisticRegressionROC(X,Y[:,0],Z,(1,1,0.31),"L.R.-Annotator1",'--')
+LogisticRegressionROC(X,Y[:,1],Z,(0.39,1,0.33),"L.R.-Annotator2",'--')
+LogisticRegressionROC(X,Y[:,2],Z,(1,1,0.31),"L.R.-Annotator3",'--')
+LogisticRegressionROC(X,Y[:,3],Z,(0.39,1,0.33),"L.R.-Annotator4",'--')
+LogisticRegressionROC(X,Y[:,4],Z,(1,1,0.31),"L.R.-Annotator5",'--')
+
 plt.show()
+
+#################    Log Likelihood Ratio    ################# 
+#plt.bar(np.arange(1,nbOfExperts+1),[sum(clusters==t) for t in range(nbOfExperts)],align='center', color=[(0,1,0),(1,0,0),(1,1,0),(0,1,1),(1,0,1)])
+
+test=[[abs(np.inner(kmeans.cluster_centers_[T,:],weight[:,t])+gamma[t]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+testbis=[[np.mean([abs(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+testter=[[np.mean([ (-1)**(1-Y[i,t])*(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+testquad=[[np.mean([(-1)**abs(Z[i]-Y[i,t])*(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+
+def plotAnnotators(stats):
+    for t in range(nbOfExperts):
+        plt.bar(np.arange(1,nbOfExperts+1),stats[t],align='center')
+        plt.show()
+
+#################    Ground-Truth Estimation without features    ################# 
+
+#np.sum([expit(np.inner(alpha,x)+beta)*np.prod([(1-expit(np.inner(weight[:,t],x)+gamma[t]))**(1-Y[i,t])+expit(np.inner(weight[:,t],x)+gamma[t])**Y[i,t] for t in range(nbOfExperts)]) for i,x in enumerate(X)])/X.shape[0]
