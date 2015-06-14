@@ -24,7 +24,8 @@ from random import random
 ##mu is a (350,1) vector
 
 nbOfExperts = 5
-
+iter_max=100
+tolerance=0.0005
 ### READING DATA
 def load_ionosphere(filename):
     with open(filename,"r") as f:
@@ -56,14 +57,14 @@ for i in range(Y.shape[0]):
             Y[i,j] = (r>beta[j])
 
 
-def p(w,x):#x a nbOfExperts colonnes et 34 lignes
+def compute_p(w,x):#x a nbOfExperts colonnes et 34 lignes
     z = np.inner(X,w)
     p = np.ones(z.shape[0])
     for i in range(z.shape[0]):
         p[i] = 1/(1+exp(-z[i]))
     return p
 
-def a(alpha,Y):
+def compute_a(alpha,Y):
     result = np.ones(Y.shape[0])
     for i in range(Y.shape[0]):
         y = Y[i,:]
@@ -75,16 +76,36 @@ def a(alpha,Y):
         result[i]=res
     return result
 
-def b(beta,Y):
-    return a(1-beta,Y)
+def compute_b(beta,Y):
+    return compute_a(1-beta,Y)
 
-    
+def f(w,X,alpha,Y,beta,mu):
+    aa=tools.to_line(compute_a(alpha,Y))
+    bb=tools.to_line(compute_b(beta,Y))
+    pp=tools.to_line(compute_p(w,X))
+    muu=tools.to_line(mu)
+    ln = np.zeros((1,aa.shape[1]))
+    prod = aa*pp
+    for i in range(aa.shape[1]):
+        ln[0,i] = log(prod[0,i])
+    ln_2 = np.zeros((1,aa.shape[1]))
+    for i in range(aa.shape[1]):
+        try:
+            ln_2[0,i] = log(1-pp[0,i])
+        except ValueError:
+            #print("là il se passe un truc")
+            pass
+    fopt = muu*ln+(1-mu)*ln_2*bb
+    fopt = reduce(operator.mul,fopt)
+    fopt = sum(fopt)
+    return fopt
+
 def gradp(x,mu,w):
-    return tools.to_col(np.inner(tools.to_line(mu-p(w,x)),x.transpose()))
+    return tools.to_col(np.inner(tools.to_line(mu-compute_p(w,x)),x.transpose()))
 
 def hessianp(x,w):
     result=0
-    sigma=p(w,x)
+    sigma=compute_p(w,x)
     for i in range(x.shape[1]):
         xinte=x[i,:]
         sigmatemp=sigma[i]
@@ -94,56 +115,64 @@ def hessianp(x,w):
 
 
 ###EM Algorithm
-mu = (1./nbOfExperts)*sum(Y.transpose())
-w = (1./34)*np.ones(34)
-alphanew = np.inner(tools.to_line(mu),Y.transpose())/sum(mu)
-betanew = np.inner(tools.to_line(1-mu),1-Y.transpose())/sum(1-mu)
+iter=0
+ecart=10
+
+
+while iter<iter_max and ecart>tolerance:
+###  E Step
+    iter=iter+1
+    if iter==1:
+        mu = (1./nbOfExperts)*sum(Y.transpose())
+        w = (1./X.shape[1])*np.ones(X.shape[1])
+        
+    else:
+        a=compute_a(alphanew,Y)
+        b=compute_b(betanew,Y)
+        p=compute_p(w,X)
+        ap=a*p
+        mu=ap/(ap+b*(1-p))
 
 
 
-def f(w,X,alpha,Y,beta,mu):
-    aa=tools.to_line(a(alpha,Y))
-    bb=tools.to_line(b(beta,Y))
-    pp=tools.to_line(p(w,X))
-    muu=tools.to_line(mu)
-    ln = np.zeros((1,aa.shape[1]))
-    prod = aa*pp
-    for i in range(aa.shape[1]):
-        ln[0,i] = log(prod[0,i])
-    ln_2 = np.zeros((1,aa.shape[1]))
-    for i in range(aa.shape[1]):
-        ln_2[0,i] = log(1-pp[0,i])
-    fopt = muu*ln+(1-mu)*ln_2*bb
-    fopt = reduce(operator.mul,fopt)
-    fopt = sum(fopt)
-    return fopt
 
 
-def fopt(w):
-    return f(w,X,alphanew,Y,betanew,mu)
 
-def gradopt(w):
-    return gradp(X,mu,w)
+### M Step
+    if iter>1:
+        alphaold=alphanew
+        betaold=betanew
+        alphanew = np.inner(tools.to_line(mu),Y.transpose())/sum(mu)
+        betanew = np.inner(tools.to_line(1-mu),1-Y.transpose())/sum(1-mu)
+        print("ecart",ecart)
+        ecart=max(np.linalg.norm(alphaold-alphanew),np.linalg.norm(betaold-betanew))
+    else:
+        alphanew = np.inner(tools.to_line(mu),Y.transpose())/sum(mu)
+        betanew = np.inner(tools.to_line(1-mu),1-Y.transpose())/sum(1-mu)
+    def negf(w):
+    
+        return -f(w,X,alphanew,Y,betanew,mu)
+    
 
-def hessopt(w):
-    return hessianp(X,w)
+    def neggrad(w):
+    #si on enleve le [0,:], on reçoit une erreur d'incompatiblité des dimensions (34,34) avec (1,34)
+        return -gradp(X,mu,w)[0,:]
 
-#optimize.newton(func=fopt,x0=w,fprime=gradopt)#,fprime2=hessopt)
-print "taille de w : ",w.shape
-optimize.minimize(fun=fopt,x0=w,method='Newton-CG',jac=gradopt,hess=hessopt)
-###Finir l'algorithme EM
-##for k in range(1000):
-##    ###E-step
-##    print "E-step"
-##    a = a(alphanew,Y)
-##    b = b(betanew,Y)
-##    p = p(w,x)
-##    ##Calculer mu
-##
-##    ###M-step
-##    alphanew = np.inner(tools.to_line(mu),Y.transpose())/sum(mu)
-##    betanew = np.inner(tools.to_line(1-mu),1-Y.transpose())/sum(1-mu)
-##    ##Calculer w
+    def neghess(w):
+        return -hessianp(X,w)
+
+    bnds=w.shape[0]*[(0,10**8)]
+
+
+    res = optimize.minimize(negf, w,bounds=bnds,jac=neggrad,hess=neghess,method='Newton-CG',options={'disp': False, 'gtol':1})
+    w=res.x
+    print("Iteration : ",iter)
+print("alpha real",alpha)
+print("alpha found ",alphanew)
+print("beta real",beta)
+print("beta found ", betanew)
+
+
 
     
 
