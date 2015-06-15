@@ -21,6 +21,71 @@ from scipy import interp
 #########Modeling annotator expertise:
 #########Learning when everybody knows a bit of something
             
+#################   Data Loading and Formating    ################# 
+
+nbOfExperts = 5
+
+### READING DATA
+def load_ionosphere(filename):
+    with open(filename,"r") as f:
+                 f.readline()
+                 data =[ [x for x in l.split(',')] for l in f]
+    tmp = np.array(data)
+    tmp[:,34][np.where(tmp[:,34]=='b\n')]=0
+    tmp[:,34][np.where(tmp[:,34]=='g\n')]=1
+    #print tmp.shape
+    np.random.shuffle(tmp)
+    return tmp[:,0:34].astype(float),tmp[:,34].astype(int)
+    
+def load_housing(filename):
+    with open(filename,"r") as f:
+                 f.readline()
+                 data =[ [x for x in l.split(' ') if x!=''] for l in f]
+    tmp = np.array(data)
+    tmp[:,13]=[(price>np.median(tmp[:,13].astype(float))).astype(int) for price in tmp[:,13].astype(float)]
+    print tmp.shape
+    np.random.shuffle(tmp)
+    return tmp[:,0:13].astype(float),tmp[:,13].astype(float)
+    
+def load_glass(filename):
+    with open(filename,"r") as f:
+                 f.readline()
+                 data =[ [x for x in l.split(',')] for l in f]
+    tmp = np.array(data)
+    tmp[:,10]=[(label>2).astype(int) for label in tmp[:,10].astype(int)]
+    print tmp.shape
+    np.random.shuffle(tmp)
+    return tmp[:,1:10].astype(float),tmp[:,10].astype(int)    
+    
+#X,Z = load_ionosphere("../DataSets/ionosphere.csv")
+X,Z = load_housing("../DataSets/housing.csv")
+#X,Z = load_glass("../DataSets/glass.csv")
+
+###CLUSTERING DATA WITH KMEANS
+kmeans = KMeans(nbOfExperts)
+clusters = kmeans.fit_predict(X)
+print kmeans.inertia_
+
+###CREATING EXPERTS LABELS
+Y=np.zeros([X.shape[0],nbOfExperts])
+for i,cluster in enumerate(clusters):
+    Y[i,:]=Z[i]
+    for j in range(Y.shape[1]):
+        if j!=cluster and np.random.random_sample()<0.35:
+            Y[i,j]=1-Z[i]
+
+### Initialization            
+alpha = np.ones(X.shape[1])
+beta = 1
+epsilon = 1e-30
+
+alphaNew = np.zeros(X.shape[1])
+betaNew = 0
+weight = np.zeros([X.shape[1],nbOfExperts])
+gamma = np.zeros(nbOfExperts)     
+p=0.5*np.ones([X.shape[0],2])       
+            
+            
 #################    Learning parameters    ################# 
 
 def eta(U,V,t,i):
@@ -52,8 +117,11 @@ def gradfopt_EM(x):
     gradweight = np.zeros(np.prod(weight.shape))  
     
     for i,Xi in enumerate(X):
-        gradalpha += nbOfExperts*(p[i,1]-expit(np.inner(a,Xi)+b))*Xi
-        gradbeta +=  nbOfExperts*(p[i,1]-expit(np.inner(a,Xi)+b))
+        temp1=nbOfExperts*(p[i,1]-expit(np.inner(a,Xi)+b))
+        gradalpha+=temp1*Xi
+        gradbeta +=temp1
+        #gradalpha += nbOfExperts*(p[i,1]-expit(np.inner(a,Xi)+b))*Xi
+        #gradbeta +=  nbOfExperts*(p[i,1]-expit(np.inner(a,Xi)+b))
         gradgamma +=  [(1-expit(np.inner(w[:,t],Xi)+g[t]))+Y[i,t]*(p[i,1]-p[i,0])-p[i,1] for t in range(nbOfExperts)]
         gradweight +=  np.reshape(np.array([((1-expit(np.inner(w[:,t],Xi)+g[t]))+Y[i,t]*(p[i,1]-p[i,0])-p[i,1])*Xi for t in range(nbOfExperts)]),np.prod(weight.shape))
     return -np.hstack((gradalpha,gradbeta,gradgamma,gradweight))
@@ -76,58 +144,19 @@ def gradfopt(x):
         gradweight = gradweight + np.reshape(np.array([(-1)**Y[i,t]*(p[i,0]-p[i,1])*expit(np.inner(w[:,t],Xi)+g[t])*(1-expit(np.inner(w[:,t],Xi)+g[t]))*Xi  for t in range(nbOfExperts)]),np.prod(weight.shape))
     return -np.hstack((gradalpha,gradbeta,gradgamma,gradweight))
 
-#################   Data Loading and Formating    ################# 
 
-nbOfExperts = 5
-
-### READING DATA
-def load_ionosphere(filename):
-    with open(filename,"r") as f:
-                 f.readline()
-                 data =[ [x for x in l.split(',')] for l in f]
-    tmp = np.array(data)
-    tmp[:,34][np.where(tmp[:,34]=='b\n')]=0
-    tmp[:,34][np.where(tmp[:,34]=='g\n')]=1
-    #print tmp.shape
-    np.random.shuffle(tmp)
-    return tmp[:,0:34].astype(float),tmp[:,34].astype(int)
-    
-X,Z = load_ionosphere("ionosphere.csv")
-
-###CLUSTERING DATA WITH KMEANS
-kmeans = KMeans(nbOfExperts)
-clusters = kmeans.fit_predict(X)
-print kmeans.inertia_
-
-###CREATING EXPERTS LABELS
-Y=np.zeros([X.shape[0],nbOfExperts])
-for i,cluster in enumerate(clusters):
-    Y[i,:]=Z[i]
-    for j in range(Y.shape[1]):
-        if j!=cluster and np.random.random_sample()<0.35:
-            Y[i,j]=1-Z[i]
-
-### Initialization            
-alpha = np.ones(X.shape[1])
-beta = 1
-epsilon = 1e-20
-
-alphaNew = np.zeros(X.shape[1])
-betaNew = 0
-weight = np.zeros([X.shape[1],nbOfExperts])
-gamma = np.zeros(nbOfExperts)
     
 ####EM-Algorithm
 iter = 0
-theta_old=0.01*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
-theta_new=1*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
+theta_old=0.001*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
+theta_new=0.0001*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
 #while (np.inner(alpha-alphaNew,alpha-alphaNew)+(beta-betaNew)**2>epsilon):
 while((fopt(theta_old)-fopt(theta_new))**2>epsilon and np.inner(alpha-alphaNew,alpha-alphaNew)+(beta-betaNew)**2>epsilon):
     print "iteration:",iter
     print "convergence criterion:", np.inner(alpha-alphaNew,alpha-alphaNew)+(beta-betaNew)**2
     
     if iter==0:
-        theta_old=0.01*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
+        theta_old=0.0001*np.ones(alpha.shape[0]+1+gamma.shape[0]+np.prod(weight.shape))
     else:
         theta_old=theta_new
         
@@ -163,10 +192,12 @@ while((fopt(theta_old)-fopt(theta_new))**2>epsilon and np.inner(alpha-alphaNew,a
     
     #res = minimize(fopt, theta_old,jac=gradfopt_EM, options={'disp': True})
     #res = minimize(fopt, theta_old, method='L-BFGS-B',jac=gradfopt_EM, options={'disp': True})
-    #res = minimize(fopt, theta_old,jac=gradfopt_EM , options={'disp': True})
-    res = minimize(fopt, theta_old, method='BFGS',jac=gradfopt_EM) 
+    res = minimize(fopt, theta_old,jac=gradfopt_EM , options={'disp': True})
+    #res = minimize(fopt, theta_old, method='BFGS',jac=gradfopt_EM) 
     
     theta_new = res.x
+    #print "f(theta°old)=", fopt(theta_old)    
+    #print "f(theta_new)=", fopt(theta_new)    
     alphaNew = theta_new[0:alpha.shape[0]]
     betaNew = theta_new[alpha.shape[0]:alpha.shape[0]+1][0]
     gamma = theta_new[alpha.shape[0]+1:alpha.shape[0]+1+gamma.shape[0]]
@@ -222,7 +253,7 @@ for i,y in enumerate(Y):
     Y_maj[i]=Counter(y).most_common()[0][0]
 
 # concatenate labels
-#X_concatenate=np.repeat(X,5,axis=0)
+#X_concatenate=np.repeat(X,nbOfExperts,axis=0)
 #Y_concatenate=np.reshape(Y,np.prod(Y.shape))
 
 ### ROC for EM-algorithm
@@ -231,31 +262,34 @@ plt.plot(fpr, tpr, '-.',color=(1,0,1), label='Bernouilli AUC:%0.2f' % auc(fpr, t
 
 plt.plot([0, 1], [0, 1], '--', color=(0.6, 0.6, 0.6))
 
-LogisticRegressionROC(np.repeat(X,5,axis=0),np.reshape(Y,np.prod(Y.shape)),np.repeat(Z,5,axis=0),(0,0,1),"L.R. Concatenation",'-.')
+LogisticRegressionROC(np.repeat(X,nbOfExperts,axis=0),np.reshape(Y,np.prod(Y.shape)),np.repeat(Z,nbOfExperts,axis=0),(0,0,1),"L.R. Concatenation",'-.')
 
 LogisticRegressionROC(X,Y_maj,Z,(0,0,0),"L.R. Majority",'-')
 
-LogisticRegressionROC(X,Y[:,0],Z,(1,1,0.31),"L.R.-Annotator1",'--')
-LogisticRegressionROC(X,Y[:,1],Z,(0.39,1,0.33),"L.R.-Annotator2",'--')
-LogisticRegressionROC(X,Y[:,2],Z,(1,1,0.31),"L.R.-Annotator3",'--')
-LogisticRegressionROC(X,Y[:,3],Z,(0.39,1,0.33),"L.R.-Annotator4",'--')
-LogisticRegressionROC(X,Y[:,4],Z,(1,1,0.31),"L.R.-Annotator5",'--')
+for i in range(nbOfExperts):
+    if i%2==0:
+        Color=(1,1,0.31)
+    else:
+        Color=(0.39,1,0.33)
+    LogisticRegressionROC(X,Y[:,i],Z,Color,"L.R.-Annotator{}".format(i+1),'--')
 
 plt.show()
 
 #################    Log Likelihood Ratio    ################# 
-#plt.bar(np.arange(1,nbOfExperts+1),[sum(clusters==t) for t in range(nbOfExperts)],align='center', color=[(0,1,0),(1,0,0),(1,1,0),(0,1,1),(1,0,1)])
+plt.bar(np.arange(1,nbOfExperts+1),[sum(clusters==t) for t in range(nbOfExperts)],align='center', color=[(0,1,0),(1,0,0),(1,1,0),(0,1,1),(1,0,1)])
+plt.show()
 
-test=[[abs(np.inner(kmeans.cluster_centers_[T,:],weight[:,t])+gamma[t]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
-testbis=[[np.mean([abs(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
-testter=[[np.mean([ (-1)**(1-Y[i,t])*(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
-testquad=[[np.mean([(-1)**abs(Z[i]-Y[i,t])*(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+stats1=[[abs(np.inner(kmeans.cluster_centers_[T,:],weight[:,t])+gamma[t]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+stats2=[[np.mean([abs(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+stats3=[[np.mean([ (-1)**(1-Y[i,t])*(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
+stats4=[[np.mean([(-1)**abs(Z[i]-Y[i,t])*(np.inner(X[i,:],weight[:,t])+gamma[t]) for i in np.where(clusters==T)]) for t in range(nbOfExperts)] for T in range(nbOfExperts)]
 
 def plotAnnotators(stats):
     for t in range(nbOfExperts):
         plt.bar(np.arange(1,nbOfExperts+1),stats[t],align='center')
         plt.show()
 
+#plotAnnotators(stats4)
 #################    Ground-Truth Estimation without features    ################# 
 
 #np.sum([expit(np.inner(alpha,x)+beta)*np.prod([(1-expit(np.inner(weight[:,t],x)+gamma[t]))**(1-Y[i,t])+expit(np.inner(weight[:,t],x)+gamma[t])**Y[i,t] for t in range(nbOfExperts)]) for i,x in enumerate(X)])/X.shape[0]
