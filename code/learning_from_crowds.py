@@ -238,8 +238,71 @@ for i in range(nbOfExperts):
 
 plt.show()
     
+##Bayesian approach
+from scipy.special import gamma
+
+def beta_prior(delta,a,b):
+    beta = 0
+    if (delta>1) or (delta<0):
+        return beta
+    else:
+        beta = (gamma(a+b)/(gamma(a)*gamma(b)))*(delta**(a-1))*((1-delta)**(b-1))
+        return beta
+
+##EM-algorithm
+#intialisation
+mu = (1./nbOfExperts)*sum(Y.transpose())
+#utiliser la beta prior
+
+def f_bayesian(w,X,alpha,Y,beta,mu,gamma):
+    f = f(w,X,alpha,Y,beta,mu)
+    fopt = f - (gamma*(w**2))/2
+    return fopt
+
+def gradp_bayesian(x,mu,w,gamma):
+    return tools.to_col(np.inner(tools.to_line(mu-compute_p(w,x)),x.transpose())) - gamma*w
+
+def hessianp_bayesian(x,w,gamma):
+    result=0
+    sigma=compute_p(w,x)
+    for i in range(x.shape[1]):
+        xinte=x[i,:]
+        sigmatemp=sigma[i]
+        result+=sigmatemp*(1-sigmatemp)*np.dot(tools.to_col(xinte),tools.to_line(xinte))
+    return result - gamma
 
 
+for i in range(1000):
+
+    ##update alpha and beta
+    #trouver a et b
+    alphanew = np.inner(tools.to_line(mu),Y.transpose())/sum(mu)
+    betanew = np.inner(tools.to_line(1-mu),1-Y.transpose())/sum(1-mu)
+
+    ##update mu
+    a=compute_a(alphanew,Y)
+    b=compute_b(betanew,Y)
+    p=compute_p(w,X)
+    ap=a*p
+    mu=ap/(ap+b*(1-p))
+    
+    def negf_bayesian(w):
+    
+        return -f(w,X,alphanew,Y,betanew,mu,gamma)
+    
+
+    def neggrad_bayesian(w):
+    #si on enleve le [0,:], on reçoit une erreur d'incompatiblité des dimensions (34,34) avec (1,34)
+        return -gradp(X,mu,w,gamma)[0,:]
+
+    def neghess_bayesian(w):
+        return -hessianp(X,w,gamma)
+
+    bnds=w.shape[0]*[(0,10**8)]
+
+
+    res = optimize.minimize(negf_bayesian, w,bounds=bnds,jac=neggrad_bayesian,hess=neghess_bayesian,method='Newton-CG',options={'disp': False, 'gtol':1})
+    w=res.x
 
 
 
